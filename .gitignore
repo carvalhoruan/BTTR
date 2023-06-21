@@ -9,6 +9,9 @@ __pycache__/
 *$py.class
 .github
 
+#Database do optuna (resultados)
+*.db
+
 # C extensions
 *.so
 
