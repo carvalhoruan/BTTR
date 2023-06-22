@@ -17,11 +17,12 @@ import numpy as np
 
 from .vocab import CROHMEVocab
 
+#Variavel global: tentar parametrizar
 vocab = CROHMEVocab()
 
 Data = List[Tuple[str, Image.Image, List[str]]]
 
-MAX_SIZE = 32e4  # change here accroading to your GPU memory
+MAX_SIZE = 34e4  # change here accroading to your GPU memory
 
 # load data
 def data_iterator(
@@ -82,7 +83,7 @@ def data_iterator(
     return list(zip(fname_total, feature_total, label_total))
 
 
-def extract_data(archive: ZipFile, dir_name: str, data_augmentation=0) -> Data:
+def extract_data(archive: ZipFile, dir_name: str, data_augmentation=0, reduce=True) -> Data:
     """Extract all data need for a dataset from zip archive
     Args:
         archive (ZipFile):
@@ -97,19 +98,23 @@ def extract_data(archive: ZipFile, dir_name: str, data_augmentation=0) -> Data:
         tmp = line.decode().strip().split()
         img_name = tmp[0]
         formula = tmp[1:]
-        with archive.open(f"{dir_name}/{img_name}.png", "r") as f:
-            # move image to memory immediately, avoid lazy loading, which will lead to None pointer error in loading
-            img = Image.open(f).copy()
-            img = ImageOps.grayscale(img)
+        # with archive.open(f"{dir_name}/{img_name}.jpg", "r") as f:
+        #     # move image to memory immediately, avoid lazy loading, which will lead to None pointer error in loading
+        #     img = Image.open(f).copy()
+        #     img = ImageOps.grayscale(img)
             
         
         # TESTE-------------------------------------------------------
-        data_file = archive.read(f"{dir_name}/{img_name}.png")
+        try:
+            data_file = archive.read(f"{dir_name}/{img_name}.jpg")
+        except KeyError:
+            data_file = archive.read(f"{dir_name}/{img_name}.png")
         
         image_cv2 = cv2.imdecode(np.frombuffer(data_file, np.uint8), 1)
         image_cv2 = cv2.cvtColor(image_cv2, cv2.COLOR_BGR2GRAY)
-        dim = (150, 150)
-        image_cv2 = cv2.resize(image_cv2, (dim), interpolation = cv2.INTER_AREA)
+        if reduce:
+            dim = (150, 150)
+            image_cv2 = cv2.resize(image_cv2, (dim), interpolation = cv2.INTER_AREA)
         
         #cv2.imshow('image', image_cv2)
         #cv2.waitKey()
@@ -194,9 +199,9 @@ def collate_fn(batch):
     return Batch(fnames, x, x_mask, seqs_y)
 
 
-def build_dataset(archive, folder: str, batch_size: int, data_augmentation=0):
+def build_dataset(archive, folder: str, batch_size: int, data_augmentation=0, reduce=True):
     print("\nARQUIVO: " + str(archive) + "\t FOLDER: " + str(folder))
-    data = extract_data(archive, folder, data_augmentation)
+    data = extract_data(archive, folder, data_augmentation, reduce)
     return data_iterator(data, batch_size)
 
 
@@ -207,7 +212,9 @@ class CROHMEDatamodule(pl.LightningDataModule):
         test_year: str = "2014",
         batch_size: int = 8,
         num_workers: int = 5,
-        data_augmentation = 0
+        data_augmentation = 0,
+        reduce = True,
+        dictionary_path = "bttr/datamodule/dictionary.txt"
     ) -> None:
         super().__init__()
         assert isinstance(test_year, str)
@@ -216,19 +223,32 @@ class CROHMEDatamodule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.data_augmentation = data_augmentation
+        self.reduce = reduce
+        self.dictionary_path = dictionary_path
+        self.set_vocab()
 
+        
         print(f"Load data from: {self.zipfile_path}")
         #print("DATA AUGMENTATION: " + str(self.data_augmentation))
+
+    def set_vocab(self):
+        vocab.set_new_dictionary(self.dictionary_path)
+        print(vocab.word2idx)
+    
 
     def setup(self, stage: Optional[str] = None) -> None:
         #print("\n\nENTREI NO SETUP")
         with ZipFile(self.zipfile_path) as archive:
             #print(archive.namelist())
             if stage == "fit" or stage is None:
-                self.train_dataset = build_dataset(archive, "train", self.batch_size, self.data_augmentation)
-                self.val_dataset = build_dataset(archive, self.test_year, 1)
+                self.train_dataset = build_dataset(archive, "train", self.batch_size, data_augmentation=self.data_augmentation, reduce=self.reduce)
+                self.val_dataset = build_dataset(archive, self.test_year, 1, data_augmentation=0, reduce=self.reduce)
+                if self.reduce:
+                    print("Train and val dataset reduced for (150,150)")
             if stage == "test" or stage is None:
-                self.test_dataset = build_dataset(archive, self.test_year, 1)
+                self.test_dataset = build_dataset(archive, self.test_year, 1, data_augmentation=0, reduce=self.reduce)
+                if self.reduce:
+                    print("Test dataset reduced for (150,150)")
 
     def train_dataloader(self):
         return DataLoader(

@@ -20,6 +20,8 @@ class CROHMEVocab:
         self.word2idx["<sos>"] = self.SOS_IDX
         self.word2idx["<eos>"] = self.EOS_IDX
 
+        #print("VOCAB PATH: " + dict_path)
+
         with open(dict_path, "r") as f:
             for line in f.readlines():
                 w = line.strip()
@@ -27,7 +29,13 @@ class CROHMEVocab:
 
         self.idx2word: Dict[int, str] = {v: k for k, v in self.word2idx.items()}
 
-        # print(f"Init vocab with size: {len(self.word2idx)}")
+        print(f"Init vocab with size: {len(self.word2idx)}")
+
+    def set_new_dictionary(self, new_path_dict):
+        new_vocab = CROHMEVocab(new_path_dict)
+        self.word2idx = new_vocab.word2idx
+        self.idx2word = new_vocab.idx2word
+        print(f"Init new vocab with size: {len(self.word2idx)}")
 
     def words2indices(self, words: List[str]) -> List[int]:
         return [self.word2idx[w] for w in words]
